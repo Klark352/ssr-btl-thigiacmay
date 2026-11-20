@@ -145,15 +145,34 @@ def tao_yaml_du_lieu():
         print("Đối chiếu ảnh, nhãn và map: khớp.")
 
 
-def chuan_bi_du_lieu(nguon_da_thu_nho=None):
-    """Chuẩn bị dữ liệu huấn luyện. Ưu tiên: dùng sẵn thư mục có sẵn > chép từ Kaggle Dataset đã thu nhỏ > thu nhỏ từ dữ liệu gốc."""
+def tim_nguon_da_thu_nho(goc="/kaggle/input"):
+    """Tìm trong /kaggle/input một thư mục dữ liệu đã thu nhỏ (có images, detection-object, seg-line), bỏ qua dữ liệu gốc."""
+    for d, ds, _ in os.walk(goc):
+        if d.count(os.sep) - goc.count(os.sep) > 5:
+            ds[:] = []
+            continue
+        if os.path.abspath(d).startswith(os.path.abspath(NGUON_GOC)):
+            ds[:] = []
+            continue
+        if {"images", "seg-line", "detection-object"} <= set(ds):
+            return d
+    return None
+
+
+def chuan_bi_du_lieu(nguon_da_thu_nho="tu_dong"):
+    """Chuẩn bị dữ liệu huấn luyện. Thứ tự ưu tiên:
+    1) thư mục /kaggle/working/ssr đã có; 2) chép từ Kaggle Dataset đã thu nhỏ (tự tìm, hoặc truyền đường dẫn);
+    3) thu nhỏ từ dữ liệu gốc (chậm)."""
     if os.path.isdir(DATA) and _thu_muc_anh(DATA):
         print("Dữ liệu đã thu nhỏ có sẵn:", DATA)
-    elif nguon_da_thu_nho and os.path.isdir(nguon_da_thu_nho):
-        print("Chép dữ liệu đã thu nhỏ từ", nguon_da_thu_nho)
-        shutil.copytree(nguon_da_thu_nho, DATA, dirs_exist_ok=True)
     else:
-        thu_nho_du_lieu()
+        nguon = tim_nguon_da_thu_nho() if nguon_da_thu_nho == "tu_dong" else nguon_da_thu_nho
+        if nguon and os.path.isdir(nguon):
+            print("Chép dữ liệu đã thu nhỏ từ", nguon)
+            shutil.copytree(nguon, DATA, dirs_exist_ok=True)
+        else:
+            print("Không có bộ dữ liệu đã thu nhỏ trong Input, thu nhỏ từ dữ liệu gốc (chậm).")
+            thu_nho_du_lieu()
     tao_yaml_du_lieu()
 
 
@@ -281,8 +300,8 @@ def tom_tat(ten):
         return None
     bang = pd.read_csv(p)
     bang.columns = [c.strip() for c in bang.columns]
-    print(f"[{ten}] {len(bang)} epoch. Số liệu epoch cuối:")
-    print(bang.tail(1).T.to_string())
+    print(f"[{ten}] results.csv có {len(bang)} dòng.")
+    print((bang if len(bang) <= 4 else bang.tail(1)).T.to_string())
     return bang
 
 
