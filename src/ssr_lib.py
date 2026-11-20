@@ -77,40 +77,72 @@ def _thu_muc_anh(goc):
     return kq
 
 
-def _doc_ten_lop():
-    """Lấy tên lớp từ file yaml gốc của bộ dữ liệu. Không thấy thì trả về None."""
-    import yaml
-    for goc in (NGUON_GOC, DATA):
-        for f in glob.glob(f"{goc}/**/*.yaml", recursive=True):
-            try:
-                d = yaml.safe_load(open(f, encoding="utf-8"))
-                if isinstance(d, dict) and "names" in d:
-                    return d["names"], f
-            except Exception:
-                pass
-    return None, None
+# Cấu hình dữ liệu mặc định, lấy từ ultralytics/datasets/bdd-multi.yaml của chính tác giả YOLO-SSR
+# (file đó viết cho đúng bộ dữ liệu này). Nếu repo có file đó thì đọc trực tiếp từ đó.
+YAML_MAU = f"{REPO}/ultralytics/datasets/bdd-multi.yaml"
+MAC_DINH = {
+    "labels_list": ["detection-object", "seg-line"],   # tên thư mục nhãn của từng nhiệm vụ (phát hiện, phân đoạn)
+    "tnc": 2,                                          # tổng số lớp
+    "nc_list": [1, 1],                                 # số lớp của từng nhiệm vụ
+    "map": [{"1": "0"}, {"0": "0"}],                   # đổi id lớp trong file nhãn: phát hiện 1 -> 0, phân đoạn 0 -> 0
+    "names": {0: "line", 1: "stem"},                   # 0 = hàng cây, 1 = thân cây
+}
+
+
+def _id_lop_trong_nhan(nhiem_vu, tap):
+    """Đếm số file nhãn và các id lớp xuất hiện trong thư mục nhãn của một nhiệm vụ."""
+    tep = glob.glob(f"{DATA}/{nhiem_vu}/labels/{tap}/*.txt")
+    ids = set()
+    for f in tep:
+        with open(f, encoding="utf-8") as fh:
+            for dong in fh:
+                if dong.strip():
+                    ids.add(dong.split()[0])
+    return len(tep), ids
 
 
 def tao_yaml_du_lieu():
-    """Tạo file ssr-multi.yaml trỏ tới các thư mục ảnh train, val, test và in ra để kiểm tra."""
+    """Tạo ssr-multi.yaml theo đúng khuôn của tác giả, trỏ vào dữ liệu đã thu nhỏ, rồi đối chiếu với dữ liệu thật."""
     import yaml
-    thu_muc = _thu_muc_anh(DATA)
-    if "train" not in thu_muc or "val" not in thu_muc:
-        raise RuntimeError(f"Không tìm thấy thư mục ảnh train hoặc val trong {DATA}. Kiểm tra cấu trúc dữ liệu.")
-    names, nguon_ten = _doc_ten_lop()
-    if names is None:
-        names = {0: "lop_0", 1: "lop_1"}
-        print("CẢNH BÁO: không thấy tên lớp trong yaml gốc, đang dùng tên tạm. Hãy sửa lại cho đúng.")
-    cau_hinh = {k: (v[0] if len(v) == 1 else v) for k, v in thu_muc.items()}
-    cau_hinh["nc"] = len(names)
-    cau_hinh["names"] = names
+    mau = {k: v for k, v in MAC_DINH.items()}
+    nguon = "giá trị mặc định (chép từ bdd-multi.yaml của tác giả)"
+    if os.path.exists(YAML_MAU):
+        with open(YAML_MAU, encoding="utf-8") as f:
+            goc = yaml.safe_load(f)
+        for k in MAC_DINH:
+            if k in goc:
+                mau[k] = goc[k]
+        nguon = "ultralytics/datasets/bdd-multi.yaml của tác giả"
+    cau_hinh = {"path": DATA, "train": "images/train", "val": "images/val", "test": "images/test", **mau}
     with open(YAML_DU_LIEU, "w", encoding="utf-8") as f:
         yaml.safe_dump(cau_hinh, f, allow_unicode=True, sort_keys=False)
-    print(f"Đã tạo {YAML_DU_LIEU} (tên lớp lấy từ: {nguon_ten or 'giá trị tạm'}):")
-    for k, v in thu_muc.items():
-        so = sum(len([x for x in os.listdir(d) if x.lower().endswith(ANH)]) for d in v)
-        print(f"  {k:<6}: {so} ảnh  <- {', '.join(v)}")
-    print("  tên lớp:", names)
+    print(f"Đã tạo {YAML_DU_LIEU} (khuôn lấy từ: {nguon})")
+    print("  nhiệm vụ  :", mau["labels_list"], "| nc_list:", mau["nc_list"], "| tnc:", mau["tnc"])
+    print("  tên lớp   :", mau["names"], "| map:", mau["map"])
+
+    # Đối chiếu với dữ liệu thật để phát hiện sai lệch ngay từ bước chuẩn bị
+    van_de = []
+    for tap in ("train", "val", "test"):
+        thu_muc = f"{DATA}/images/{tap}"
+        so_anh = len([x for x in os.listdir(thu_muc) if x.lower().endswith(ANH)]) if os.path.isdir(thu_muc) else 0
+        dong = [f"  {tap:<5}: {so_anh} ảnh"]
+        if not so_anh:
+            van_de.append(f"không có ảnh trong {thu_muc}")
+        for i, nv in enumerate(mau["labels_list"]):
+            so_nhan, ids = _id_lop_trong_nhan(nv, tap)
+            khoa = set(mau["map"][i].keys()) if isinstance(mau["map"][i], dict) else None
+            dong.append(f"{nv}: {so_nhan} file nhãn, id lớp {sorted(ids)}")
+            if so_nhan != so_anh:
+                van_de.append(f"{tap}/{nv}: {so_nhan} file nhãn nhưng {so_anh} ảnh")
+            if khoa is not None and not ids <= khoa:
+                van_de.append(f"{tap}/{nv}: id lớp {sorted(ids)} không nằm trong map {sorted(khoa)}")
+        print(" | ".join(dong))
+    if van_de:
+        print("CẢNH BÁO, cần xử lý trước khi huấn luyện:")
+        for v in van_de:
+            print("  -", v)
+    else:
+        print("Đối chiếu ảnh, nhãn và map: khớp.")
 
 
 def chuan_bi_du_lieu(nguon_da_thu_nho=None):
