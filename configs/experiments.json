@@ -1,0 +1,33 @@
+{
+  "chung": {
+    "epochs": 30,
+    "batch": 16,
+    "imgsz": 640,
+    "seed": 0,
+    "deterministic": true
+  },
+  "thi_nghiem": {
+    "E0": {
+      "mo_ta": "Baseline (điền cfg sau khi chốt baseline từ cell kiểm tra repo)",
+      "cfg": null
+    },
+    "E_main": {
+      "mo_ta": "YOLO-SSR đầy đủ, chạy lại với seed cố định",
+      "cfg": "YOLO-SSR.yaml"
+    },
+    "E1": {
+      "mo_ta": "Đổi hyperparameter: giảm tốc độ học lr0 từ 0.01 xuống 0.005",
+      "cfg": "YOLO-SSR.yaml",
+      "tham_so": {"lr0": 0.005}
+    },
+    "E2": {
+      "mo_ta": "Đổi thành phần: bỏ một module (điền cfg là file yaml đã bỏ module)",
+      "cfg": null
+    },
+    "E3": {
+      "mo_ta": "Fine-tune 10 epoch từ best.pt của E_main với lr nhỏ hơn (tùy chọn)",
+      "trong_so": "/kaggle/working/runs/E_main/weights/best.pt",
+      "tham_so": {"epochs": 10, "lr0": 0.001}
+    }
+  }
+}

@@ -1,0 +1,11 @@
+# Không đưa dữ liệu, trọng số và kết quả lớn lên GitHub
+*.pt
+*.zip
+runs/
+logs/
+data/
+YOLO-SSR/
+__pycache__/
+.ipynb_checkpoints/
+.venv/
+.vscode/
