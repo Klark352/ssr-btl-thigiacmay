@@ -251,6 +251,7 @@ def run_train(ten, mo_hinh, tham_so=None):
     os.makedirs(LOGS, exist_ok=True)
     os.makedirs(RUNS, exist_ok=True)
     tep_log = f"{LOGS}/{ten}.log"
+    shutil.rmtree(f"{RUNS}/{ten}", ignore_errors=True)   # tránh results.csv bị nối thêm dòng của lần chạy trước
     kw = dict(data=YAML_DU_LIEU, task="multi", epochs=30, batch=16, imgsz=640, device=[0], workers=4,
               classes=[0, 1], single_cls=False, augment=True, amp=False, cache=False, val=True,
               project=RUNS, name=ten, exist_ok=True, seed=0, deterministic=True)
@@ -291,8 +292,25 @@ def chay_thi_nghiem(ma, cau_hinh, epochs=None, ten=None):
 
 
 # ---------------------------------------------------------------- KẾT QUẢ
+def _so_lieu_cuoi_tu_log(ten):
+    """Lấy số liệu kiểm định CUỐI CÙNG trong log: phát hiện (P, R, mAP50, mAP50-95) và phân đoạn (pixacc, IoU, mIoU)."""
+    tep = f"{LOGS}/{ten}.log"
+    if not os.path.exists(tep):
+        return None, None
+    log = open(tep, encoding="utf-8", errors="ignore").read().replace("\r", "\n")
+    so = r"([-+\d.eE]+)"
+    det = re.findall(r"^\s*all\s+(\d+)\s+(\d+)\s+" + r"\s+".join([so] * 4), log, flags=re.M)
+    seg = re.findall(r"\bpixacc\s+" + so + r"\s+subacc\s+" + so + r"\s+IoU\s+" + so + r"\s+mIoU\s+" + so, log)
+    return (det[-1] if det else None), (seg[-1] if seg else None)
+
+
 def tom_tat(ten):
-    """In dòng cuối của results.csv (số liệu epoch cuối) và trả về bảng đầy đủ."""
+    """In số liệu của một lần chạy.
+
+    Lưu ý về results.csv của repo: mỗi epoch ghi 2 dòng, một dòng cho nhiệm vụ phát hiện (đủ cột, có mAP50) và một dòng
+    cho nhiệm vụ phân đoạn (chỉ có 2 giá trị loss, còn các cột precision, recall, dfl thực ra chứa tốc độ học lr).
+    Vì vậy hàm này tách hai loại dòng, và lấy mAP50, IoU, mIoU cuối cùng từ log.
+    """
     import pandas as pd
     p = f"{RUNS}/{ten}/results.csv"
     if not os.path.exists(p):
@@ -300,8 +318,21 @@ def tom_tat(ten):
         return None
     bang = pd.read_csv(p)
     bang.columns = [c.strip() for c in bang.columns]
-    print(f"[{ten}] results.csv có {len(bang)} dòng.")
-    print((bang if len(bang) <= 4 else bang.tail(1)).T.to_string())
+    co_det = bang["metrics/mAP50(B)"].notna()
+    det, seg = bang[co_det], bang[~co_det]
+    print(f"[{ten}] results.csv: {len(det)} dòng phát hiện, {len(seg)} dòng phân đoạn.")
+    if len(det):
+        d = det.iloc[-1]
+        print(f"  Phát hiện, epoch {int(d['epoch'])} (train): box_loss {d['train/box_loss']}, cls_loss {d['train/cls_loss']}, "
+              f"dfl_loss {d['train/dfl_loss']} | (val): box_loss {d['val/box_loss']}, cls_loss {d['val/cls_loss']}")
+    if len(seg):
+        g = seg.iloc[-1]
+        print(f"  Phân đoạn, epoch {int(g['epoch'])} (train): loss thứ nhất {g['train/box_loss']}, loss thứ hai {g['train/cls_loss']}")
+    d, g = _so_lieu_cuoi_tu_log(ten)
+    if d:
+        print(f"  Kiểm định cuối (log), phát hiện : ảnh {d[0]}, đối tượng {d[1]}, P {d[2]}, R {d[3]}, mAP50 {d[4]}, mAP50-95 {d[5]}")
+    if g:
+        print(f"  Kiểm định cuối (log), phân đoạn : pixacc {g[0]}, subacc {g[1]}, IoU {g[2]}, mIoU {g[3]}")
     return bang
 
 
