@@ -22,6 +22,7 @@ DATA = f"{BASE}/ssr"                      # dữ liệu đã thu nhỏ, dùng đ
 RUNS = f"{BASE}/runs"
 LOGS = f"{BASE}/logs"
 YAML_DU_LIEU = f"{BASE}/ssr-multi.yaml"
+CONFIGS = f"{BASE}/ssr-btl-thigiacmay/configs"   # nơi chứa các yaml mô hình của riêng bạn
 NGUON_GOC = "/kaggle/input/datasets/xxdxdxd/seedlingstemrow/SSR/SSR"
 ANH = (".jpg", ".jpeg", ".png", ".bmp")
 CANH_DAI = 1280                           # cạnh dài tối đa của ảnh sau khi thu nhỏ
@@ -156,8 +157,11 @@ def _tim_cau_hinh(mo_hinh):
     """Đổi tên file cấu hình (vd YOLO-SSR.yaml) thành đường dẫn đầy đủ trong repo."""
     if os.path.isfile(mo_hinh):
         return os.path.abspath(mo_hinh)
-    khop = glob.glob(f"{REPO}/**/{mo_hinh}", recursive=True)
-    return khop[0] if khop else mo_hinh
+    for goc in (CONFIGS, REPO):          # ưu tiên yaml của bạn, rồi tới yaml trong repo gốc
+        khop = glob.glob(f"{goc}/**/{mo_hinh}", recursive=True)
+        if khop:
+            return khop[0]
+    return mo_hinh
 
 
 def _train_worker(mo_hinh, kw, tep_log):

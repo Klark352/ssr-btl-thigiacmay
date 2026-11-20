@@ -1,0 +1,53 @@
+# E0: baseline. Cùng khung đa nhiệm, cùng đầu Detect và Segment_v3, cùng scale n và cùng nhánh phân đoạn
+# với YOLO-SSR; thay các module mới (TriPAC, DGST) bằng khối chuẩn của YOLOv8 (C2f) và bỏ SPDC.
+tnc: 2  # number of classes
+
+scales:
+  # [depth, width, max_channels]
+  n: [0.33, 0.25, 1024]
+  s: [0.33, 0.50, 1024]
+  m: [0.67, 0.75, 768]
+  l: [1.00, 1.00, 512]
+  x: [1.00, 1.25, 512]
+
+scale: n
+
+backbone:
+  # [from, repeats, module, args]
+  - [-1, 1, Conv, [64, 3, 2]]      # 0-P1/2
+  - [-1, 1, Conv, [128, 3, 2]]     # 1-P2/4
+  - [-1, 3, C2f, [128, True]]      # 2   (SSR: TriPAC)
+  - [-1, 1, Conv, [256, 3, 2]]     # 3-P3/8
+  - [-1, 6, C2f, [256, True]]      # 4   (SSR: TriPAC)
+  - [-1, 1, Conv, [512, 3, 2]]     # 5-P4/16
+  - [-1, 6, C2f, [512, True]]      # 6   (SSR: TriPAC)
+  - [-1, 1, Conv, [1024, 3, 2]]    # 7-P5/32
+  - [-1, 3, C2f, [1024, True]]     # 8   (SSR: TriPAC)
+  - [-1, 1, SPPF, [1024, 5]]       # 9
+
+head:
+  - [-1, 1, nn.Upsample, [None, 2, 'nearest']]   # 10
+  - [[-1, 6], 1, Concat, [1]]                    # 11 cat backbone P4
+  - [-1, 3, C2f, [512]]                          # 12 (SSR: DGST)
+
+  - [-1, 1, nn.Upsample, [None, 2, 'nearest']]   # 13
+  - [[-1, 4], 1, Concat, [1]]                    # 14 cat backbone P3 (SSR có thêm SPDC từ lớp 2)
+  - [-1, 3, C2f, [256]]                          # 15 (P3/8-small) (SSR: TriPAC + DGST)
+
+  - [-1, 1, Conv, [256, 3, 2]]                   # 16
+  - [[-1, 12], 1, Concat, [1]]                   # 17 cat head P4
+  - [-1, 3, C2f, [512]]                          # 18 (P4/16-medium) (SSR: DGST)
+
+  - [-1, 1, Conv, [512, 3, 2]]                   # 19
+  - [[-1, 9], 1, Concat, [1]]                    # 20 cat head P5
+  - [-1, 3, C2f, [1024]]                         # 21 (P5/32-large) (SSR: DGST)
+
+  # Nhánh phân đoạn: hợp nhất ba mức đặc trưng về P3/8
+  - [21, 1, nn.Upsample, [None, 4, 'nearest']]   # 22
+  - [18, 1, nn.Upsample, [None, 2, 'nearest']]   # 23
+  - [[-1, -2, 15], 1, Concat, [1]]               # 24
+  - [-1, 1, Conv, [256, 1, 1]]                   # 25
+  - [-1, 1, C2f, [256]]                          # 26 (SSR: TriPAC)
+
+  - [[15, 18, 21], 1, Detect, [1]]               # 27
+  - [[26], 1, Segment_v3, [1]]                   # 28
