@@ -77,6 +77,12 @@ def _thu_muc_anh(goc):
     return kq
 
 
+def _du_ba_tap(goc):
+    """True nếu thư mục có ảnh ở đủ cả ba tập train, val, test."""
+    kq = _thu_muc_anh(goc) if os.path.isdir(goc) else {}
+    return all(k in kq for k in ("train", "val", "test"))
+
+
 # Cấu hình dữ liệu mặc định, lấy từ ultralytics/datasets/bdd-multi.yaml của chính tác giả YOLO-SSR
 # (file đó viết cho đúng bộ dữ liệu này). Nếu repo có file đó thì đọc trực tiếp từ đó.
 YAML_MAU = f"{REPO}/ultralytics/datasets/bdd-multi.yaml"
@@ -141,12 +147,17 @@ def tao_yaml_du_lieu():
         print("CẢNH BÁO, cần xử lý trước khi huấn luyện:")
         for v in van_de:
             print("  -", v)
+        if any(v.startswith("không có ảnh") for v in van_de):
+            raise RuntimeError(f"Một trong ba tập không có ảnh, dừng lại để không tốn giờ GPU. "
+                               f"Xóa {DATA} rồi chạy lại chuan_bi_du_lieu(None).")
     else:
         print("Đối chiếu ảnh, nhãn và map: khớp.")
 
 
 def tim_nguon_da_thu_nho(goc="/kaggle/input"):
-    """Tìm trong /kaggle/input một thư mục dữ liệu đã thu nhỏ (có images, detection-object, seg-line), bỏ qua dữ liệu gốc."""
+    """Tìm trong /kaggle/input một thư mục dữ liệu đã thu nhỏ, bỏ qua dữ liệu gốc.
+    Chỉ nhận thư mục dùng được: có images, detection-object, seg-line VÀ có ảnh ở đủ train, val, test.
+    (Thư mục chỉ có đủ tên mà không có ảnh, ví dụ một bộ mở rộng khác trong cùng Dataset, bị bỏ qua.)"""
     for d, ds, _ in os.walk(goc):
         if d.count(os.sep) - goc.count(os.sep) > 5:
             ds[:] = []
@@ -155,7 +166,9 @@ def tim_nguon_da_thu_nho(goc="/kaggle/input"):
             ds[:] = []
             continue
         if {"images", "seg-line", "detection-object"} <= set(ds):
-            return d
+            if _du_ba_tap(d):
+                return d
+            print(f"Bỏ qua {d}: có đủ thư mục nhưng không có ảnh ở đủ train, val, test.")
     return None
 
 
@@ -163,15 +176,19 @@ def chuan_bi_du_lieu(nguon_da_thu_nho="tu_dong"):
     """Chuẩn bị dữ liệu huấn luyện. Thứ tự ưu tiên:
     1) thư mục /kaggle/working/ssr đã có; 2) chép từ Kaggle Dataset đã thu nhỏ (tự tìm, hoặc truyền đường dẫn);
     3) thu nhỏ từ dữ liệu gốc (chậm)."""
-    if os.path.isdir(DATA) and _thu_muc_anh(DATA):
+    if _du_ba_tap(DATA):
         print("Dữ liệu đã thu nhỏ có sẵn:", DATA)
     else:
         nguon = tim_nguon_da_thu_nho() if nguon_da_thu_nho == "tu_dong" else nguon_da_thu_nho
         if nguon and os.path.isdir(nguon):
             print("Chép dữ liệu đã thu nhỏ từ", nguon)
             shutil.copytree(nguon, DATA, dirs_exist_ok=True)
-        else:
-            print("Không có bộ dữ liệu đã thu nhỏ trong Input, thu nhỏ từ dữ liệu gốc (chậm).")
+            if not _du_ba_tap(DATA):
+                print("Dữ liệu chép về không dùng được (thiếu ảnh ở train, val hoặc test), xóa và làm lại từ dữ liệu gốc.")
+                shutil.rmtree(DATA, ignore_errors=True)
+                nguon = None
+        if not (nguon and os.path.isdir(nguon)):
+            print("Không có bộ dữ liệu đã thu nhỏ dùng được trong Input, thu nhỏ từ dữ liệu gốc (chậm).")
             thu_nho_du_lieu()
     tao_yaml_du_lieu()
 
