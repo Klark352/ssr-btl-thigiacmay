@@ -134,7 +134,7 @@ def danh_gia(ten, best, split="test", imgsz=640, batch=16):
     os.makedirs(L.LOGS, exist_ok=True)
     tep_log = f"{L.LOGS}/{split}_{ten}.log"
     kw = dict(data=L.YAML_DU_LIEU, task="multi", split=split, imgsz=imgsz, batch=batch, device=[0],
-              workers=2, plots=False, project=f"{L.RUNS}/_danh_gia", name=f"{split}_{ten}", exist_ok=True)
+              workers=4, plots=False, project=f"{L.RUNS}/_danh_gia", name=f"{split}_{ten}", exist_ok=True)
     p = mp.get_context("fork").Process(target=_val_worker, args=(best, kw, tep_log))
     print(f"[{ten}] đánh giá trên {split} ...")
     p.start(); p.join()
