@@ -240,3 +240,96 @@ def bieu_do_so_sanh(bang, thu_muc=None, hien=True):
     ax.set_title("So sánh chỉ số trên tập kiểm định")
     fig.tight_layout()
     return _xong(fig, thu_muc, "so_sanh_chi_so.png", hien)
+
+
+# ------------------------------------------------------------------ xem nhanh: so sánh trực tiếp giữa các E
+CHI_SO_CHINH = ["mAP50", "mAP50-95", "P", "R", "mIoU", "IoU"]
+
+
+def bang_danh_dau(bang, so_le=4):
+    """Bảng gọn các chỉ số chính; giá trị tốt nhất của mỗi cột có dấu ★ (dấu phẩy thập phân)."""
+    cot = [c for c in CHI_SO_CHINH if c in bang.columns]
+    b = bang.set_index("Mã")[cot]
+    t = b.map(lambda v: "" if pd.isna(v) else f"{v:.{so_le}f}".replace(".", ","))
+    for c in cot:
+        if b[c].notna().any():
+            for k in b.index[b[c] == b[c].max()]:
+                t.loc[k, c] += " ★"
+    t.insert(0, "Mô tả", [MO_TA.get(i, "") for i in t.index])
+    return t
+
+
+def xep_hang(bang, so_le=4):
+    """In thứ tự các thí nghiệm theo từng chỉ số chính, kèm khoảng cách giữa hạng nhất và hạng cuối."""
+    b = bang.set_index("Mã")
+    for c in (x for x in CHI_SO_CHINH if x in b.columns):
+        s = b[c].dropna().sort_values(ascending=False)
+        if len(s) < 2:
+            continue
+        chuoi = " > ".join(f"{k} ({v:.{so_le}f})".replace(".", ",") for k, v in s.items())
+        print(f"{c:9s}: {chuoi}   [chênh cao nhất - thấp nhất = {s.iloc[0] - s.iloc[-1]:.{so_le}f}]".replace(".", ","))
+
+
+def theo_epoch(ds, moc=(1, 5, 10, 15, 20), so_le=4):
+    """Giá trị mAP50 (từ results.csv) và mIoU (từ log) của từng E tại một số epoch, để thấy tốc độ hội tụ."""
+    ket = {}
+    for ten, f in ds.items():
+        d, _ = doc_csv(f["csv"])
+        _, seg = doc_log(f["log"])
+        n = len(d)
+        for m in moc:
+            if 1 <= m <= n:
+                ket.setdefault(("mAP50", f"epoch {m}"), {})[ten] = float(d["metrics/mAP50(B)"].iloc[m - 1])
+                if len(seg) >= m:
+                    ket.setdefault(("mIoU", f"epoch {m}"), {})[ten] = seg[m - 1][3]
+    b = pd.DataFrame(ket).T
+    b.index.names = ["Chỉ số", "Mốc"]
+    return b.reindex(columns=[k for k in THU_TU if k in b.columns]).sort_index(level=0, sort_remaining=False)
+
+
+def nhan_xet(bang, cap, nguong=0.01):
+    """In nhận xét tự động ngắn gọn: E nào tốt nhất, từng cặp hơn/kém bao nhiêu, và cảnh báo nếu chênh lệch quá nhỏ."""
+    b = bang.set_index("Mã")
+    for c in ("mAP50", "mIoU"):
+        if c in b.columns and b[c].notna().any():
+            print(f"- {c} cao nhất: {b[c].idxmax()} = {b[c].max():.4f}".replace(".", ","))
+    for _, r in cap.iterrows():
+        mo = []
+        for c in ("mAP50", "mIoU"):
+            if f"Δ{c}" in r and pd.notna(r[f"Δ{c}"]):
+                d = r[f"Δ{c}"]
+                mo.append(f"Δ{c} = {d:+.4f}".replace(".", ",") + (" (nhỏ, có thể chỉ là nhiễu)" if abs(d) < nguong else ""))
+        if mo:
+            print(f"- {r['Cặp']} ({r['Yếu tố khác nhau']}): " + "; ".join(mo))
+
+
+def hinh_so_sanh(ds, bang, thu_muc=None, hien=True):
+    """Một hình gồm ba phần: cột so sánh (ghi giá trị trên cột), đường mAP50 theo epoch, đường mIoU theo epoch."""
+    import matplotlib
+    if not hien:
+        matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    fig, ax = plt.subplots(1, 3, figsize=(15, 4), gridspec_kw={"width_ratios": [1.5, 1, 1]})
+    cot = [c for c in ("mAP50", "mAP50-95", "mIoU") if c in bang.columns]
+    w = 0.8 / max(len(bang), 1)
+    for i, (_, r) in enumerate(bang.iterrows()):
+        xs = [j + i * w for j in range(len(cot))]
+        ys = [r[c] for c in cot]
+        ax[0].bar(xs, ys, w, label=r["Mã"], color=_mau(r["Mã"]), edgecolor="#555")
+        for x, y in zip(xs, ys):
+            ax[0].text(x, y + 0.008, f"{y:.3f}".replace(".", ","), ha="center", va="bottom", fontsize=7, rotation=90)
+    ax[0].set_xticks([j + 0.4 - w / 2 for j in range(len(cot))]); ax[0].set_xticklabels(cot)
+    ax[0].set_ylim(0, 1.12); ax[0].grid(axis="y", alpha=.3); ax[0].legend(ncol=len(bang), fontsize=8)
+    ax[0].set_title("Giá trị cuối (tập val)")
+    for ten, f in ds.items():
+        d, _ = doc_csv(f["csv"])
+        _, seg = doc_log(f["log"])
+        ax[1].plot(range(1, len(d) + 1), d["metrics/mAP50(B)"], label=ten, color=_mau(ten), lw=1.8)
+        n = min(len(seg), len(d))
+        if n:
+            ax[2].plot(range(1, n + 1), [s[3] for s in seg[:n]], label=ten, color=_mau(ten), lw=1.8)
+    for a, t in ((ax[1], "mAP50 theo epoch"), (ax[2], "mIoU theo epoch")):
+        a.set_title(t); a.set_xlabel("epoch"); a.grid(alpha=.3)
+    ax[1].legend(fontsize=8)
+    fig.tight_layout()
+    return _xong(fig, thu_muc, "so_sanh_cac_E.png", hien)
