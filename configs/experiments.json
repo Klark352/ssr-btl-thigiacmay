@@ -1,6 +1,6 @@
 {
   "chung": {
-    "epochs": 30,
+    "epochs": 20,
     "batch": 16,
     "imgsz": 640,
     "seed": 0,

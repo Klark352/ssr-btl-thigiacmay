@@ -269,7 +269,7 @@ def run_train(ten, mo_hinh, tham_so=None):
     os.makedirs(RUNS, exist_ok=True)
     tep_log = f"{LOGS}/{ten}.log"
     shutil.rmtree(f"{RUNS}/{ten}", ignore_errors=True)   # tránh results.csv bị nối thêm dòng của lần chạy trước
-    kw = dict(data=YAML_DU_LIEU, task="multi", epochs=30, batch=16, imgsz=640, device=[0], workers=4,
+    kw = dict(data=YAML_DU_LIEU, task="multi", epochs=20, batch=16, imgsz=640, device=[0], workers=4,
               classes=[0, 1], single_cls=False, augment=True, amp=False, cache=False, val=True,
               project=RUNS, name=ten, exist_ok=True, seed=0, deterministic=True)
     kw.update(tham_so or {})
